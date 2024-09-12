@@ -1,5 +1,5 @@
-# Created by https://www.toptal.com/developers/gitignore/api/flutter,web,androidstudio,dotenv,macos,windows,linux
-# Edit at https://www.toptal.com/developers/gitignore?templates=flutter,web,androidstudio,dotenv,macos,windows,linux
+# Created by https://www.toptal.com/developers/gitignore/api/flutter,androidstudio,dotenv,macos,windows,linux
+# Edit at https://www.toptal.com/developers/gitignore?templates=flutter,androidstudio,dotenv,macos,windows,linux
 
 ### dotenv ###
 .env
@@ -115,21 +115,6 @@ Temporary Items
 ### macOS Patch ###
 # iCloud generated files
 *.icloud
-
-### Web ###
-*.asp
-*.cer
-*.csr
-*.css
-*.htm
-*.html
-*.js
-*.jsp
-*.php
-*.rss
-*.wasm
-*.wat
-*.xhtml
 
 ### Windows ###
 # Windows thumbnail cache files
