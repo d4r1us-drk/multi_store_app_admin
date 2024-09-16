@@ -50,7 +50,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
       String imageURL = await _uploadCategoryToStorage(_image);
       await _firestore.collection('categories').doc(_fileName).set({
         'categoryName': categoryNameController.text,
-        'bannerImage': imageURL,
+        'categoryImage': imageURL,
       }).whenComplete(() {
         EasyLoading.dismiss();
         setState(() {
@@ -87,7 +87,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             Text(
               'Upload Category',
               style: GoogleFonts.lato(
-                fontWeight: FontWeight.bold, fontSize: 24,
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
               ),
             ),
             const SizedBox(height: 10),
@@ -128,26 +129,25 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Column (
-                  children: [
-                    ElevatedButton(
-                        onPressed: _pickImage,
-                        child: Text('Select Image', style: GoogleFonts.lato()),
-                    ),
-                    const SizedBox(height: 5),
-                    ElevatedButton(
-                      onPressed: _uploadCategoryToFirestore,
-                      child: Text('Save', style: GoogleFonts.lato()),
-                    ),
-                  ]
-                )
+                Column(children: [
+                  ElevatedButton(
+                    onPressed: _pickImage,
+                    child: Text('Select Image', style: GoogleFonts.lato()),
+                  ),
+                  const SizedBox(height: 5),
+                  ElevatedButton(
+                    onPressed: _uploadCategoryToFirestore,
+                    child: Text('Save', style: GoogleFonts.lato()),
+                  ),
+                ])
               ],
             ),
             const SizedBox(height: 30),
             Text(
               'Uploaded Categories',
               style: GoogleFonts.lato(
-                fontWeight: FontWeight.bold, fontSize: 24,
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
               ),
             ),
             const SizedBox(height: 10),
@@ -163,7 +163,8 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
                   return GridView.builder(
                     padding: const EdgeInsets.all(10),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 8,
                       crossAxisSpacing: 3,
                       mainAxisSpacing: 3,
@@ -171,8 +172,9 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                     ),
                     itemCount: categories.length,
                     itemBuilder: (context, index) {
-                      final categoryData = categories[index].data() as Map<String, dynamic>;
-                      final categoryUrl = categoryData['bannerImage'];
+                      final categoryData =
+                          categories[index].data() as Map<String, dynamic>;
+                      final categoryUrl = categoryData['categoryImage'];
                       final categoryName = categoryData['categoryName'];
 
                       return Column(
@@ -180,20 +182,18 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
                           ClipRRect(
                             borderRadius: BorderRadius.circular(10),
                             child: CachedNetworkImage(
-                              height: 150,
-                              width: 150,
+                              height: 100,
+                              width: 100,
                               imageUrl: categoryUrl,
                               fit: BoxFit.cover,
-                              placeholder: (context, url) =>
-                                  Shimmer.fromColors(
+                              placeholder: (context, url) => Shimmer.fromColors(
                                 baseColor: Colors.grey.shade300,
                                 highlightColor: Colors.grey.shade100,
                                 child: Container(
                                   color: Colors.grey.shade300,
                                 ),
                               ),
-                              errorWidget: (context, url, error) =>
-                                  const Icon(
+                              errorWidget: (context, url, error) => const Icon(
                                 Icons.error,
                                 color: Colors.red,
                               ),
