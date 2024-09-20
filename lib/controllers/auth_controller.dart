@@ -8,6 +8,15 @@ class AuthController {
       .instance; // Access to the database
   //final FirebaseStorage _firebaseStorage = FirebaseStorage.instance;
 
+  Future<String> resetPassword(String email) async {
+    try {
+      await _firebaseAuth.sendPasswordResetEmail(email: email);
+      return "success";
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   // Method to register a new user
   Future<String> registerNewUser
       (String name, String email, String password) async {

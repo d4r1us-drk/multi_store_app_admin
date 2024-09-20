@@ -1,10 +1,11 @@
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
-// import 'package:cached_network_image/cached_network_image.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:multi_store_app_admin/controllers/product_controller.dart';
+import 'package:multi_store_app_admin/models/product_model.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 class ProductsScreen extends StatefulWidget {
   const ProductsScreen({super.key});
@@ -14,8 +15,11 @@ class ProductsScreen extends StatefulWidget {
 }
 
 class _ProductsScreenState extends State<ProductsScreen> {
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-  final FirebaseStorage _storage = FirebaseStorage.instance;
+  final ProductController _productController = ProductController();
+  List<ProductModel> products = [];
+  List<Uint8List?> _images = [];
+  List<String> _imageUrls = [];
+  String? selectedCategory;
 
   final TextEditingController productNameController = TextEditingController();
   final TextEditingController priceController = TextEditingController();
@@ -24,17 +28,25 @@ class _ProductsScreenState extends State<ProductsScreen> {
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController sizeController = TextEditingController();
 
-  String? selectedCategory;
-  String? _productError;
-  List<Uint8List?> _images = []; // Holds the selected images
-  List<String> _imageUrls = []; // Holds the uploaded image URLs
+  @override
+  void initState() {
+    super.initState();
+    _loadProducts();
+  }
+
+  Future<void> _loadProducts() async {
+    _productController.getProducts().listen((productList) {
+      setState(() {
+        products = productList;
+      });
+    });
+  }
 
   Future<void> _pickImages() async {
     FilePickerResult? result = await FilePicker.platform.pickFiles(
       allowMultiple: true,
       type: FileType.image,
     );
-
     if (result != null) {
       setState(() {
         _images = result.files.map((file) => file.bytes).toList();
@@ -42,174 +54,137 @@ class _ProductsScreenState extends State<ProductsScreen> {
     }
   }
 
-  Future<String> _uploadImageToStorage(
-      Uint8List image, String imageName) async {
-    Reference ref = _storage.ref().child('products').child(imageName);
-    UploadTask uploadTask = ref.putData(image);
-    TaskSnapshot snapshot = await uploadTask;
-    return await snapshot.ref.getDownloadURL();
-  }
-
-  Future<void> _uploadProductToFirestore() async {
-    // Validate the input fields
-    if (productNameController.text.isNotEmpty &&
-        priceController.text.isNotEmpty &&
-        quantityController.text.isNotEmpty &&
-        selectedCategory != null &&
-        _images.isNotEmpty) {
+  Future<void> _saveProduct() async {
+    if (_images.isNotEmpty && productNameController.text.isNotEmpty) {
       EasyLoading.show();
 
-      // Upload images and collect their URLs
       for (var i = 0; i < _images.length; i++) {
         String imageName = '${productNameController.text}_$i';
-        String imageUrl = await _uploadImageToStorage(_images[i]!, imageName);
-        _imageUrls.add(imageUrl); // Store image URLs in list
+        String imageUrl =
+            await _productController.uploadProductImage(_images[i]!, imageName);
+        _imageUrls.add(imageUrl);
       }
 
-      await _firestore.collection('products').add({
-        'productName': productNameController.text,
-        'price': double.tryParse(priceController.text) ?? 0,
-        'discount': double.tryParse(discountController.text) ?? 0,
-        'quantity': int.tryParse(quantityController.text) ?? 1,
-        'description': descriptionController.text,
-        'category': selectedCategory,
-        'size': sizeController.text,
-        'images': _imageUrls, // Store image URLs in Firestore
-      }).whenComplete(() {
-        EasyLoading.dismiss();
-        setState(() {
-          // Clear the form
-          productNameController.clear();
-          priceController.clear();
-          discountController.clear();
-          quantityController.clear();
-          descriptionController.clear();
-          sizeController.clear();
-          selectedCategory = null;
-          _productError = null;
-          _images = []; // Clear selected images
-          _imageUrls = []; // Clear image URLs
-        });
+      ProductModel product = ProductModel(
+        id: '',
+        productName: productNameController.text,
+        price: double.tryParse(priceController.text) ?? 0,
+        discount: double.tryParse(discountController.text) ?? 0,
+        quantity: int.tryParse(quantityController.text) ?? 1,
+        description: descriptionController.text,
+        category: selectedCategory ?? '',
+        size: sizeController.text,
+        images: _imageUrls,
+      );
+      await _productController.addProduct(product);
+
+      EasyLoading.dismiss();
+      setState(() {
+        _images = [];
+        _imageUrls = [];
+        _clearFormFields();
       });
     } else {
-      // Show error message if fields are not filled correctly
-      setState(() {
-        _productError =
-            "Please complete all fields and upload at least one image.";
-      });
-      EasyLoading.showError("Please complete all fields.");
+      EasyLoading.showError("Please fill out all fields and upload images.");
     }
   }
 
-  // Widget to display selected images with the option to remove them
-  Widget _buildImagePreview() {
-    if (_images.isEmpty) {
-      return const SizedBox.shrink(); // Return nothing if no images selected
-    }
-
-    return SizedBox(
-      height: 150,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        itemCount: _images.length,
-        itemBuilder: (context, index) {
-          return Padding(
-            padding: const EdgeInsets.only(right: 8.0),
-            child: Stack(
-              children: [
-                Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: Colors.grey),
-                  ),
-                  child: Image.memory(
-                    _images[index]!,
-                    fit: BoxFit.cover,
-                  ),
-                ),
-                // Remove button on the top right of each image
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.remove_circle,
-                      color: Colors.red,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _images.removeAt(index);
-                      });
-                    },
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+  void _clearFormFields() {
+    productNameController.clear();
+    priceController.clear();
+    discountController.clear();
+    quantityController.clear();
+    descriptionController.clear();
+    sizeController.clear();
+    selectedCategory = null;
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Product Information'),
-        centerTitle: true,
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Enter Product Information',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 10),
-              // Product Name
-              TextField(
-                controller: productNameController,
-                decoration: InputDecoration(
-                  labelText: 'Enter Product Name',
-                  border: const OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Price and Category in a Row
-              Row(
-                children: [
-                  // Price Field
-                  Expanded(
-                    child: TextField(
-                      controller: priceController,
-                      keyboardType: TextInputType.number,
+  Future<void> _deleteProduct(String productId) async {
+    await _productController.deleteProduct(productId);
+  }
+
+  void _showAddProductDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Add New Product', style: GoogleFonts.lato()),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: productNameController,
                       decoration: InputDecoration(
-                        labelText: 'Enter Price',
+                        labelText: 'Product Name',
+                        labelStyle: GoogleFonts.lato(),
                         border: const OutlineInputBorder(),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 10),
-                  // Category Dropdown
-                  Expanded(
-                    child: StreamBuilder<QuerySnapshot>(
-                      stream: _firestore.collection('categories').snapshots(),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: priceController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Price',
+                        labelStyle: GoogleFonts.lato(),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: discountController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Discount (%)',
+                        labelStyle: GoogleFonts.lato(),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: quantityController,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        labelText: 'Quantity',
+                        labelStyle: GoogleFonts.lato(),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: descriptionController,
+                      maxLines: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Description',
+                        labelStyle: GoogleFonts.lato(),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    TextField(
+                      controller: sizeController,
+                      decoration: InputDecoration(
+                        labelText: 'Size',
+                        labelStyle: GoogleFonts.lato(),
+                        border: const OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    StreamBuilder<QuerySnapshot>(
+                      stream: _productController.getCategories(),
                       builder: (context, snapshot) {
                         if (!snapshot.hasData) {
                           return const CircularProgressIndicator();
                         }
                         final categories = snapshot.data!.docs;
-
                         return DropdownButtonFormField<String>(
                           value: selectedCategory,
-                          hint: const Text('Select a Category'),
+                          hint: const Text('Select Category'),
                           items: categories.map((doc) {
-                            final categoryName = doc['categoryName'] as String;
+                            final categoryName = doc['categoryName'];
                             return DropdownMenuItem<String>(
                               value: categoryName,
                               child: Text(categoryName),
@@ -220,86 +195,108 @@ class _ProductsScreenState extends State<ProductsScreen> {
                               selectedCategory = value;
                             });
                           },
-                          decoration: const InputDecoration(
-                            border: OutlineInputBorder(),
-                          ),
                         );
                       },
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              // Discount Field
-              TextField(
-                controller: discountController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Discount',
-                  border: OutlineInputBorder(),
+                    const SizedBox(height: 10),
+                    ElevatedButton(
+                      onPressed: _pickImages,
+                      child: const Text('Select Images'),
+                    ),
+                    const SizedBox(height: 10),
+                    Text('${_images.length} image(s) selected'),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              // Quantity Field
-              TextField(
-                controller: quantityController,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(
-                  labelText: 'Quantity',
-                  border: OutlineInputBorder(),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Cancel', style: GoogleFonts.lato()),
                 ),
-              ),
-              const SizedBox(height: 10),
-              // Description Field
-              TextField(
-                controller: descriptionController,
-                maxLines: 3,
-                decoration: const InputDecoration(
-                  labelText: 'Description',
-                  border: OutlineInputBorder(),
+                ElevatedButton(
+                  onPressed: () {
+                    _saveProduct();
+                    Navigator.of(context).pop();
+                  },
+                  child: Text('Save Product', style: GoogleFonts.lato()),
                 ),
-              ),
-              const SizedBox(height: 10),
-              // Add a Size Field
-              TextField(
-                controller: sizeController,
-                decoration: const InputDecoration(
-                  labelText: 'Add a Size',
-                  border: OutlineInputBorder(),
-                ),
-              ),
-              const SizedBox(height: 10),
-              // Upload Images Section
-              Row(
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text('Manage Products', style: GoogleFonts.lato()),
+        centerTitle: true,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ElevatedButton(
+              onPressed: _showAddProductDialog,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  ElevatedButton(
-                    onPressed: _pickImages,
-                    child: const Text('Select Images'),
-                  ),
-                  const SizedBox(width: 10),
-                  // Show selected image count
-                  Text('${_images.length} image(s) selected'),
+                  const Icon(Icons.add),
+                  const SizedBox(width: 5),
+                  Text('New Product', style: GoogleFonts.lato()),
                 ],
               ),
-              const SizedBox(height: 10),
-              // Image Preview Widget
-              _buildImagePreview(),
-              const SizedBox(height: 20),
-              // Add Product Button
-              ElevatedButton(
-                onPressed: _uploadProductToFirestore,
-                child: const Text('Add Product'),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Products',
+              style: GoogleFonts.lato(
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
               ),
-              if (_productError != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 10.0),
-                  child: Text(
-                    _productError!,
-                    style: const TextStyle(color: Colors.red),
-                  ),
-                ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 10),
+            Expanded(
+              child: ListView.builder(
+                itemCount: products.length,
+                itemBuilder: (context, index) {
+                  final product = products[index];
+                  return Container(
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    child: ListTile(
+                      title: Text(product.productName),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Price: \$${product.price.toStringAsFixed(2)}'),
+                          Text('Discount: ${product.discount}%'),
+                          Text('Quantity: ${product.quantity}'),
+                          Text('Category: ${product.category}'),
+                          Text('Size: ${product.size}'),
+                        ],
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        onPressed: () {
+                          _deleteProduct(product.id);
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );

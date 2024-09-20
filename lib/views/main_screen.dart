@@ -6,7 +6,7 @@ import 'package:multi_store_app_admin/views/nav_screens/dashboard_screen.dart';
 import 'package:multi_store_app_admin/views/nav_screens/vendors_screen.dart';
 import 'package:multi_store_app_admin/views/nav_screens/orders_screen.dart';
 import 'package:multi_store_app_admin/views/nav_screens/categories_screen.dart';
-import 'package:multi_store_app_admin/views/nav_screens/upload_banner_screen.dart';
+import 'package:multi_store_app_admin/views/nav_screens/banner_screen.dart';
 import 'package:multi_store_app_admin/views/nav_screens/products_screen.dart';
 
 class MainScreen extends StatefulWidget {
@@ -27,7 +27,7 @@ class _MainScreenState extends State<MainScreen> {
     'Buyers': const BuyersScreen(),
     'Orders': const OrdersScreen(),
     'Categories': const CategoriesScreen(),
-    'Upload Banners': const UploadBannersScreen(),
+    'Upload Banners': const BannersScreen(),
     'Products': const ProductsScreen(),
   };
 

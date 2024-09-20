@@ -1,11 +1,11 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
+import 'dart:typed_data';
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:shimmer/shimmer.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:multi_store_app_admin/controllers/category_controller.dart';
+import 'package:multi_store_app_admin/models/category_model.dart';
 
 class CategoriesScreen extends StatefulWidget {
   const CategoriesScreen({super.key});
@@ -15,19 +15,32 @@ class CategoriesScreen extends StatefulWidget {
 }
 
 class _CategoriesScreenState extends State<CategoriesScreen> {
-  final FirebaseStorage _storage = FirebaseStorage.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final CategoryController _categoryController = CategoryController();
   final TextEditingController categoryNameController = TextEditingController();
   String? _categoryError; // Error message holder
-
-  dynamic _image;
+  Uint8List? _image;
   String? _fileName;
+  List<CategoryModel> categories = [];
 
-  void _pickImage() async {
+  @override
+  void initState() {
+    super.initState();
+    _loadCategories();
+  }
+
+  Future<void> _loadCategories() async {
+    _categoryController.getCategories().listen((categoryList) {
+      setState(() {
+        categories = categoryList;
+      });
+    });
+  }
+
+  void _pickImage(StateSetter setState) async {
     FilePickerResult? result = await FilePicker.platform
         .pickFiles(allowMultiple: false, type: FileType.image);
 
-    if (result != null) {
+    if (result != null && result.files.isNotEmpty) {
       setState(() {
         _image = result.files.first.bytes;
         _fileName = result.files.first.name;
@@ -35,41 +48,108 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
     }
   }
 
-  Future<String> _uploadCategoryToStorage(dynamic image) async {
-    var ref = _storage.ref().child('categories').child(_fileName!);
-    UploadTask uploadTask = ref.putData(image);
-    TaskSnapshot snapshot = await uploadTask;
-    String downloadURL = await snapshot.ref.getDownloadURL();
-    return downloadURL;
-  }
-
-  Future<void> _uploadCategoryToFirestore() async {
-    // Validate both image and category name
+  Future<void> _saveCategory() async {
     if (_image != null && categoryNameController.text.isNotEmpty) {
       EasyLoading.show();
-      String imageURL = await _uploadCategoryToStorage(_image);
-      await _firestore.collection('categories').doc(_fileName).set({
-        'categoryName': categoryNameController.text,
-        'categoryImage': imageURL,
-      }).whenComplete(() {
-        EasyLoading.dismiss();
-        setState(() {
-          _image = null;
-          categoryNameController.clear();
-          _categoryError = null; // Clear error when successful
-        });
+      String imageUrl = await _categoryController.uploadCategoryImage(_image!, _fileName!);
+      CategoryModel category = CategoryModel(
+        id: '', // Firestore generates the ID
+        categoryName: categoryNameController.text,
+        categoryImage: imageUrl,
+      );
+      await _categoryController.addCategory(category);
+      EasyLoading.dismiss();
+      setState(() {
+        _image = null;
+        categoryNameController.clear();
+        _categoryError = null; // Clear error when successful
       });
     } else {
-      // Set error message if category name is empty
       setState(() {
-        if (categoryNameController.text.isEmpty) {
-          _categoryError = "Please enter a category name";
-        } else {
-          _categoryError = null;
-        }
+        _categoryError = categoryNameController.text.isEmpty
+            ? "Please enter a category name"
+            : null;
       });
       EasyLoading.showError("Please select an image and enter a category name");
     }
+  }
+
+  Future<void> _deleteCategory(String categoryId) async {
+    await _categoryController.deleteCategory(categoryId);
+    _loadCategories();
+  }
+
+  void _showAddCategoryDialog() {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return AlertDialog(
+              title: Text('Add New Category', style: GoogleFonts.lato()),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _image != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.memory(
+                            _image!,
+                            height: 140,
+                            width: 140,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : GestureDetector(
+                          onTap: () {
+                            _pickImage(setState);
+                          },
+                          child: Container(
+                            height: 100,
+                            width: 100,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade300,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: Colors.grey.shade400),
+                            ),
+                            child: Center(
+                              child: Icon(Icons.image,
+                                  size: 50, color: Colors.grey.shade500),
+                            ),
+                          ),
+                        ),
+                  const SizedBox(height: 10),
+                  TextField(
+                    controller: categoryNameController,
+                    decoration: InputDecoration(
+                      labelText: 'Category Name',
+                      labelStyle: GoogleFonts.lato(),
+                      border: const OutlineInputBorder(),
+                      errorText: _categoryError,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () {
+                      _pickImage(setState);
+                    },
+                    child: Text('Select Icon', style: GoogleFonts.lato()),
+                  ),
+                  const SizedBox(height: 10),
+                  ElevatedButton(
+                    onPressed: () {
+                      _saveCategory();
+                      Navigator.of(context).pop();
+                    },
+                    child: Text('Save category', style: GoogleFonts.lato()),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -84,67 +164,20 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Upload Category',
-              style: GoogleFonts.lato(
-                fontWeight: FontWeight.bold,
-                fontSize: 24,
+            ElevatedButton(
+              onPressed: _showAddCategoryDialog,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.add),
+                  const SizedBox(width: 5),
+                  Text('New Category', style: GoogleFonts.lato()),
+                ],
               ),
             ),
-            const SizedBox(height: 10),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                GestureDetector(
-                  onTap: _pickImage,
-                  child: Container(
-                    height: 140,
-                    width: 140,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: Colors.grey.shade400),
-                    ),
-                    child: _image != null
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: Image.memory(_image, fit: BoxFit.cover),
-                          )
-                        : Center(
-                            child: Icon(Icons.image,
-                                size: 50, color: Colors.grey.shade500),
-                          ),
-                  ),
-                ),
-                const SizedBox(width: 20),
-                Expanded(
-                  child: TextField(
-                    controller: categoryNameController,
-                    decoration: InputDecoration(
-                      labelText: 'Category Name',
-                      labelStyle: GoogleFonts.lato(),
-                      border: const OutlineInputBorder(),
-                      errorText: _categoryError, // Display error if not null
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Column(children: [
-                  ElevatedButton(
-                    onPressed: _pickImage,
-                    child: Text('Select Image', style: GoogleFonts.lato()),
-                  ),
-                  const SizedBox(height: 5),
-                  ElevatedButton(
-                    onPressed: _uploadCategoryToFirestore,
-                    child: Text('Save', style: GoogleFonts.lato()),
-                  ),
-                ])
-              ],
-            ),
-            const SizedBox(height: 30),
+            const SizedBox(height: 20),
             Text(
-              'Uploaded Categories',
+              'Categories',
               style: GoogleFonts.lato(
                 fontWeight: FontWeight.bold,
                 fontSize: 24,
@@ -152,61 +185,29 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             ),
             const SizedBox(height: 10),
             Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore.collection('categories').snapshots(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+              child: ListView.builder(
+                itemCount: categories.length,
+                itemBuilder: (context, index) {
+                  final category = categories[index];
 
-                  final categories = snapshot.data!.docs;
-
-                  return GridView.builder(
-                    padding: const EdgeInsets.all(10),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 8,
-                      crossAxisSpacing: 3,
-                      mainAxisSpacing: 3,
-                      childAspectRatio: 1, // 1:1 aspect ratio
+                  return Container (
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(10),
                     ),
-                    itemCount: categories.length,
-                    itemBuilder: (context, index) {
-                      final categoryData =
-                          categories[index].data() as Map<String, dynamic>;
-                      final categoryUrl = categoryData['categoryImage'];
-                      final categoryName = categoryData['categoryName'];
-
-                      return Column(
-                        children: [
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: CachedNetworkImage(
-                              height: 100,
-                              width: 100,
-                              imageUrl: categoryUrl,
-                              fit: BoxFit.cover,
-                              placeholder: (context, url) => Shimmer.fromColors(
-                                baseColor: Colors.grey.shade300,
-                                highlightColor: Colors.grey.shade100,
-                                child: Container(
-                                  color: Colors.grey.shade300,
-                                ),
-                              ),
-                              errorWidget: (context, url, error) => const Icon(
-                                Icons.error,
-                                color: Colors.red,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            categoryName,
-                            style: GoogleFonts.lato(),
-                          ),
-                        ],
-                      );
-                    },
+                    margin: const EdgeInsets.symmetric(vertical: 5),
+                    child: ListTile(
+                      leading: CachedNetworkImage(
+                        imageUrl: category.categoryImage,
+                        width: 100,
+                        fit: BoxFit.cover,
+                      ),
+                      title: Text(category.categoryName, style: GoogleFonts.lato()),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () => _deleteCategory(category.id),
+                      ),
+                    ),
                   );
                 },
               ),
